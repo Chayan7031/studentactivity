@@ -1,0 +1,411 @@
+// Student Activity Record Portal Database Schema
+// This schema defines all the models for student records, certificates, achievements, etc.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model for authentication (both students and admins)
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  phone     String?  @unique
+  role      UserRole @default(STUDENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Student profile (if user is a student)
+  student   Student?
+  
+  // Admin profile (if user is an admin)
+  admin     Admin?
+  
+  @@map("users")
+}
+
+enum UserRole {
+  STUDENT
+  ADMIN
+  FACULTY
+}
+
+// Student profile model
+model Student {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Personal Information
+  firstName       String
+  lastName        String
+  rollNumber      String    @unique
+  profilePhoto    String?
+  dateOfBirth     DateTime?
+  gender          Gender?
+  bloodGroup      String?
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  
+  // Academic Information
+  department      String
+  course          String
+  year            Int
+  semester        Int
+  batch           String
+  currentGPA      Float?
+  overallGPA      Float?
+  admissionDate   DateTime
+  expectedGraduation DateTime?
+  
+  // Profile completion
+  profileCompleted Boolean  @default(false)
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  certificates    Certificate[]
+  skills          StudentSkill[]
+  achievements    Achievement[]
+  jobs            Job[]
+  internships     Internship[]
+  experiences     Experience[]
+  
+  @@map("students")
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+// Admin/Faculty model
+model Admin {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName   String
+  lastName    String
+  employeeId  String   @unique
+  department  String
+  designation String
+  permissions Json?    // For different permission levels
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations for verification activities
+  certificateVerifications Certificate[] @relation("VerifiedBy")
+  achievementVerifications Achievement[] @relation("VerifiedBy")
+  jobVerifications        Job[]         @relation("VerifiedBy")
+  internshipVerifications Internship[]  @relation("VerifiedBy")
+  
+  @@map("admins")
+}
+
+// Certificate model
+model Certificate {
+  id               String            @id @default(cuid())
+  studentId        String
+  student          Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  title            String
+  description      String?
+  issuer           String            // Organization/Institution name
+  issueDate        DateTime
+  expiryDate       DateTime?
+  credentialId     String?           // Certificate ID/Number
+  credentialUrl    String?           // Verification URL
+  filePath         String            // Path to uploaded certificate file
+  fileType         String            // PDF, JPG, PNG, etc.
+  fileSize         Int               // File size in bytes
+  
+  // Verification
+  verificationStatus VerificationStatus @default(PENDING)
+  verifiedBy       String?
+  verifiedAt       DateTime?
+  verifier         Admin?            @relation("VerifiedBy", fields: [verifiedBy], references: [id])
+  rejectionReason  String?
+  
+  // Categories
+  category         CertificateCategory
+  tags             String[]          // For easier searching
+  
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  
+  @@map("certificates")
+}
+
+enum CertificateCategory {
+  TECHNICAL
+  SOFT_SKILLS
+  LANGUAGE
+  PROFESSIONAL
+  ACADEMIC
+  WORKSHOP
+  CONFERENCE
+  COMPETITION
+  OTHER
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  UNDER_REVIEW
+}
+
+// Skills model
+model Skill {
+  id          String         @id @default(cuid())
+  name        String         @unique
+  category    SkillCategory
+  description String?
+  icon        String?        // Icon name or URL
+  createdAt   DateTime       @default(now())
+  
+  // Relations
+  students    StudentSkill[]
+  
+  @@map("skills")
+}
+
+enum SkillCategory {
+  PROGRAMMING
+  WEB_DEVELOPMENT
+  MOBILE_DEVELOPMENT
+  DATA_SCIENCE
+  MACHINE_LEARNING
+  CLOUD_COMPUTING
+  DEVOPS
+  DATABASE
+  DESIGN
+  COMMUNICATION
+  LEADERSHIP
+  PROJECT_MANAGEMENT
+  ANALYTICS
+  MARKETING
+  FINANCE
+  LANGUAGE
+  OTHER
+}
+
+// Student-Skill relationship with proficiency
+model StudentSkill {
+  id           String          @id @default(cuid())
+  studentId    String
+  student      Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  skillId      String
+  skill        Skill           @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  
+  proficiency  ProficiencyLevel
+  acquiredDate DateTime        @default(now())
+  description  String?         // How/where the skill was acquired
+  
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  
+  @@unique([studentId, skillId])
+  @@map("student_skills")
+}
+
+enum ProficiencyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+// Achievements model
+model Achievement {
+  id                String             @id @default(cuid())
+  studentId         String
+  student           Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  title             String
+  description       String
+  category          AchievementCategory
+  achievementDate   DateTime
+  organization      String?            // Organization/Event organizer
+  position          String?            // Rank/Position (1st, 2nd, etc.)
+  level             AchievementLevel   // Local, State, National, International
+  
+  // Supporting documents
+  documents         String[]           // File paths for supporting documents
+  
+  // Verification
+  verificationStatus VerificationStatus @default(PENDING)
+  verifiedBy        String?
+  verifiedAt        DateTime?
+  verifier          Admin?             @relation("VerifiedBy", fields: [verifiedBy], references: [id])
+  rejectionReason   String?
+  
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  
+  @@map("achievements")
+}
+
+enum AchievementCategory {
+  ACADEMIC
+  SPORTS
+  CULTURAL
+  TECHNICAL
+  LEADERSHIP
+  COMMUNITY_SERVICE
+  RESEARCH
+  COMPETITION
+  AWARDS
+  OTHER
+}
+
+enum AchievementLevel {
+  INSTITUTIONAL
+  LOCAL
+  STATE
+  NATIONAL
+  INTERNATIONAL
+}
+
+// Job model
+model Job {
+  id               String             @id @default(cuid())
+  studentId        String
+  student          Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  company          String
+  position         String
+  jobType          JobType
+  startDate        DateTime
+  endDate          DateTime?
+  currentJob       Boolean            @default(false)
+  
+  description      String?
+  responsibilities String[]
+  technologies     String[]           // Technologies/tools used
+  achievements     String[]           // Key achievements in this role
+  
+  salary           Float?             // Optional salary information
+  location         String?
+  workMode         WorkMode?          // Remote, Hybrid, On-site
+  
+  // Supporting documents
+  documents        String[]           // Offer letter, experience letter, etc.
+  
+  // Verification
+  verificationStatus VerificationStatus @default(PENDING)
+  verifiedBy       String?
+  verifiedAt       DateTime?
+  verifier         Admin?             @relation("VerifiedBy", fields: [verifiedBy], references: [id])
+  rejectionReason  String?
+  
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  
+  @@map("jobs")
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  FREELANCE
+  TEMPORARY
+}
+
+enum WorkMode {
+  REMOTE
+  HYBRID
+  ON_SITE
+}
+
+// Internship model
+model Internship {
+  id               String             @id @default(cuid())
+  studentId        String
+  student          Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  company          String
+  position         String
+  startDate        DateTime
+  endDate          DateTime?
+  duration         Int?               // Duration in months
+  
+  description      String?
+  responsibilities String[]
+  technologies     String[]           // Technologies/tools used
+  learnings        String[]           // Key learnings from internship
+  
+  stipend          Float?             // Stipend amount
+  location         String?
+  workMode         WorkMode?          // Remote, Hybrid, On-site
+  
+  // Supporting documents
+  documents        String[]           // Offer letter, completion certificate, etc.
+  
+  // Verification
+  verificationStatus VerificationStatus @default(PENDING)
+  verifiedBy       String?
+  verifiedAt       DateTime?
+  verifier         Admin?             @relation("VerifiedBy", fields: [verifiedBy], references: [id])
+  rejectionReason  String?
+  
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  
+  @@map("internships")
+}
+
+// Experience/Activity model (for community service, volunteering, etc.)
+model Experience {
+  id          String            @id @default(cuid())
+  studentId   String
+  student     Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  title       String
+  description String
+  category    ExperienceCategory
+  startDate   DateTime
+  endDate     DateTime?
+  ongoing     Boolean           @default(false)
+  
+  organization String?          // Organization/Event name
+  role        String?           // Role/Position
+  location    String?
+  
+  // Key highlights
+  highlights  String[]          // Key learnings/achievements
+  skills      String[]          // Skills developed
+  
+  // Supporting documents
+  documents   String[]          // Photos, certificates, etc.
+  
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  @@map("experiences")
+}
+
+enum ExperienceCategory {
+  VOLUNTEERING
+  COMMUNITY_SERVICE
+  LEADERSHIP
+  CLUB_ACTIVITY
+  SOCIAL_WORK
+  CULTURAL_ACTIVITY
+  SPORTS
+  RESEARCH
+  PROJECT
+  WORKSHOP
+  SEMINAR
+  OTHER
+}
