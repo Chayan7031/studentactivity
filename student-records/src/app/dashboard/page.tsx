@@ -1,4 +1,5 @@
 "use client"
+"use client"
 
 import { useState, useEffect } from "react"
 import { useUser } from "@clerk/nextjs"
@@ -61,6 +62,13 @@ interface StudentStats {
   recentActivities: any[]
 }
 
+interface ProfileStats {
+  certificatesCount: number
+  skillsCount: number
+  achievementsCount: number
+  jobsCount: number
+}
+
 interface AIInsight {
   type: string
   priority: string
@@ -73,9 +81,27 @@ export default function DashboardPage() {
   const { user, isLoaded } = useUser()
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null)
   const [studentStats, setStudentStats] = useState<StudentStats | null>(null)
+  const [profileStats, setProfileStats] = useState<ProfileStats>({
+    certificatesCount: 0,
+    skillsCount: 0,
+    achievementsCount: 0,
+    jobsCount: 0
+  })
   const [aiInsights, setAIInsights] = useState<AIInsight[]>([])
   const [loading, setLoading] = useState(true)
   const [showWizard, setShowWizard] = useState(false)
+
+  // Update profile stats when studentProfile changes
+  useEffect(() => {
+    if (studentProfile) {
+      setProfileStats({
+        certificatesCount: studentProfile.certificates?.length || 0,
+        skillsCount: studentProfile.skills?.length || 0,
+        achievementsCount: studentProfile.achievements?.length || 0,
+        jobsCount: (studentProfile.jobs?.length || 0) + (studentProfile.internships?.length || 0)
+      })
+    }
+  }, [studentProfile])
 
   // Fetch student data
   useEffect(() => {
