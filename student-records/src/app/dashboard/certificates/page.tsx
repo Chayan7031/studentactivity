@@ -1,12 +1,14 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
+import { useToast } from "@/components/ui/use-toast"
 import {
   FileText,
   Upload,
@@ -17,7 +19,10 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
-  Search
+  Search,
+  Loader2,
+  Edit,
+  Trash2
 } from "lucide-react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -48,55 +53,24 @@ interface Certificate {
   description?: string
   category: string
   filePath: string
-  fileName: string
+  fileType: string
   fileSize: number
   verificationStatus: "PENDING" | "VERIFIED" | "REJECTED" | "UNDER_REVIEW"
   rejectionReason?: string
-  uploadedAt: string
+  createdAt: string
+  verifier?: {
+    user: {
+      firstName: string
+      lastName: string
+    }
+  }
+  verifiedAt?: string
 }
 
 export default function CertificatesPage() {
-  const [certificates, setCertificates] = useState<Certificate[]>([
-    {
-      id: "1",
-      title: "AWS Cloud Practitioner",
-      issuer: "Amazon Web Services",
-      issueDate: "2024-01-15",
-      credentialId: "AWS-CP-123456",
-      credentialUrl: "https://aws.amazon.com/verification/123456",
-      category: "TECHNICAL",
-      filePath: "/uploads/aws-cert.pdf",
-      fileName: "aws-cloud-practitioner.pdf",
-      fileSize: 2048000,
-      verificationStatus: "VERIFIED",
-      uploadedAt: "2024-01-16T10:30:00Z"
-    },
-    {
-      id: "2", 
-      title: "Python Programming Certificate",
-      issuer: "Coursera - University of Michigan",
-      issueDate: "2023-12-10",
-      category: "TECHNICAL",
-      filePath: "/uploads/python-cert.pdf",
-      fileName: "python-programming.pdf",
-      fileSize: 1536000,
-      verificationStatus: "PENDING",
-      uploadedAt: "2023-12-11T14:20:00Z"
-    },
-    {
-      id: "3",
-      title: "Communication Skills Workshop",
-      issuer: "Dale Carnegie Institute",
-      issueDate: "2023-11-05",
-      category: "SOFT_SKILLS",
-      filePath: "/uploads/communication-cert.pdf",
-      fileName: "communication-skills.pdf",
-      fileSize: 1024000,
-      verificationStatus: "REJECTED",
-      rejectionReason: "Certificate appears to be modified. Please upload original document.",
-      uploadedAt: "2023-11-06T09:15:00Z"
-    }
-  ])
+  const { toast } = useToast()
+  const [certificates, setCertificates] = useState<Certificate[]>([])
+  const [loading, setLoading] = useState(true)
 
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
   const [selectedStatus, setSelectedStatus] = useState<string>("all")
@@ -104,7 +78,35 @@ export default function CertificatesPage() {
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Fetch certificates on component mount
+  useEffect(() => {
+    fetchCertificates()
+  }, [])
+
+  const fetchCertificates = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch('/api/student/certificates')
+      if (response.ok) {
+        const data = await response.json()
+        setCertificates(data)
+      } else {
+        throw new Error('Failed to fetch certificates')
+      }
+    } catch (error) {
+      console.error('Error fetching certificates:', error)
+      toast({
+        title: "Error",
+        description: "Failed to load certificates. Please try again.",
+        variant: "destructive"
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const {
     register,
@@ -174,39 +176,110 @@ export default function CertificatesPage() {
 
   const onSubmit = async (data: CertificateFormData) => {
     if (!selectedFile) {
-      alert('Please select a file to upload')
+      toast({
+        title: "Error",
+        description: "Please select a file to upload",
+        variant: "destructive"
+      })
       return
     }
 
     setIsUploading(true)
     try {
-      // Simulate file upload and API call
-      await new Promise(resolve => setTimeout(resolve, 2000))
-
-      const newCertificate: Certificate = {
-        id: Date.now().toString(),
-        ...data,
-        filePath: `/uploads/${selectedFile.name}`,
-        fileName: selectedFile.name,
-        fileSize: selectedFile.size,
-        verificationStatus: "PENDING",
-        uploadedAt: new Date().toISOString()
+      // First upload the file
+      const fileFormData = new FormData()
+      fileFormData.append('file', selectedFile)
+      fileFormData.append('title', data.title)
+      
+      const uploadResponse = await fetch('/api/upload/certificate', {
+        method: 'POST',
+        body: fileFormData
+      })
+      
+      if (!uploadResponse.ok) {
+        const errorData = await uploadResponse.json()
+        throw new Error(errorData.error || 'File upload failed')
       }
-
-      // Add to certificates list dynamically
-      setCertificates(prev => [newCertificate, ...prev])
+      
+      const uploadResult = await uploadResponse.json()
+      
+      // Then create the certificate record
+      const certificateData = {
+        ...data,
+        filePath: uploadResult.filePath,
+        fileType: uploadResult.fileType,
+        fileSize: uploadResult.fileSize
+      }
+      
+      const createResponse = await fetch('/api/student/certificates', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(certificateData)
+      })
+      
+      if (!createResponse.ok) {
+        const errorData = await createResponse.json()
+        throw new Error(errorData.error || 'Failed to create certificate')
+      }
+      
+      // Refresh certificates list
+      await fetchCertificates()
       
       // Reset form and close dialog
       reset()
       setSelectedFile(null)
       setIsUploadDialogOpen(false)
       
-      alert('Certificate uploaded successfully!')
-    } catch (error) {
+      toast({
+        title: "Success",
+        description: "Certificate uploaded successfully! It's now pending verification."
+      })
+    } catch (error: any) {
       console.error('Upload error:', error)
-      alert('Error uploading certificate. Please try again.')
+      toast({
+        title: "Error",
+        description: error.message || "Error uploading certificate. Please try again.",
+        variant: "destructive"
+      })
     } finally {
       setIsUploading(false)
+    }
+  }
+
+  const handleDeleteCertificate = async (certificateId: string) => {
+    if (!confirm('Are you sure you want to delete this certificate?')) {
+      return
+    }
+    
+    setDeletingId(certificateId)
+    try {
+      const response = await fetch(`/api/student/certificates/${certificateId}`, {
+        method: 'DELETE'
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to delete certificate')
+      }
+      
+      // Remove from local state
+      setCertificates(prev => prev.filter(cert => cert.id !== certificateId))
+      
+      toast({
+        title: "Success",
+        description: "Certificate deleted successfully"
+      })
+    } catch (error: any) {
+      console.error('Delete error:', error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete certificate",
+        variant: "destructive"
+      })
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -218,8 +291,9 @@ export default function CertificatesPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+  const formatDate = (dateString: string | Date) => {
+    const date = typeof dateString === 'string' ? new Date(dateString) : dateString
+    return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'
@@ -456,12 +530,35 @@ export default function CertificatesPage() {
         </CardContent>
       </Card>
 
-      {/* Certificates Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredCertificates.map(certificate => {
-          const StatusIcon = statusIcons[certificate.verificationStatus]
-          return (
-            <Card key={certificate.id} className="hover:shadow-lg transition-shadow">
+      {/* Loading State */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, i) => (
+            <Card key={i} className="animate-pulse">
+              <CardHeader>
+                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
+                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-2/3"></div>
+                  <div className="flex gap-2">
+                    <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded flex-1"></div>
+                    <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded flex-1"></div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        /* Certificates Grid */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredCertificates.map(certificate => {
+            const StatusIcon = statusIcons[certificate.verificationStatus]
+            return (
+              <Card key={certificate.id} className="hover:shadow-lg transition-shadow">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -478,10 +575,19 @@ export default function CertificatesPage() {
               </CardHeader>
               
               <CardContent className="space-y-3">
-                <div className="flex items-center justify-between text-sm text-gray-600">
+                <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
                   <span>Issued: {formatDate(certificate.issueDate)}</span>
                   <span>{formatFileSize(certificate.fileSize)}</span>
                 </div>
+                
+                {certificate.verifiedAt && (
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    Verified: {formatDate(certificate.verifiedAt)}
+                    {certificate.verifier && (
+                      <span className="ml-2">by {certificate.verifier.user.firstName} {certificate.verifier.user.lastName}</span>
+                    )}
+                  </div>
+                )}
 
                 {certificate.credentialId && (
                   <div className="text-sm">
@@ -497,22 +603,54 @@ export default function CertificatesPage() {
                 )}
 
                 <div className="flex gap-2 pt-2">
-                  <Button variant="outline" size="sm" className="flex-1">
-                    <Eye className="mr-2 h-4 w-4" />
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="flex-1"
+                    onClick={() => window.open(certificate.filePath, '_blank')}
+                  >
+                    <Eye className="mr-1 h-3 w-3" />
                     View
                   </Button>
-                  <Button variant="outline" size="sm" className="flex-1">
-                    <Download className="mr-2 h-4 w-4" />
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="flex-1"
+                    onClick={() => {
+                      const link = document.createElement('a')
+                      link.href = certificate.filePath
+                      link.download = certificate.title
+                      link.click()
+                    }}
+                  >
+                    <Download className="mr-1 h-3 w-3" />
                     Download
                   </Button>
+                  {certificate.verificationStatus !== 'VERIFIED' && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handleDeleteCertificate(certificate.id)}
+                      disabled={deletingId === certificate.id}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      {deletingId === certificate.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3 w-3" />
+                      )}
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
-          )
-        })}
-      </div>
+              )
+            })}
+          </div>
+        )
+      )}
 
-      {filteredCertificates.length === 0 && (
+      {!loading && filteredCertificates.length === 0 && (
         <Card>
           <CardContent className="text-center py-12">
             <FileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />

@@ -1,4 +1,6 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 @layer base {
   :root {
@@ -58,7 +60,69 @@
 }
 
 @layer base {
+  * {
+    @apply border-border;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+  
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  /* Custom utilities for better responsiveness */
+  .container-responsive {
+    @apply mx-auto px-4 sm:px-6 lg:px-8;
+  }
+  
+  .text-responsive {
+    @apply text-sm sm:text-base;
+  }
+  
+  .heading-responsive {
+    @apply text-lg sm:text-xl md:text-2xl lg:text-3xl;
+  }
+  
+  .section-padding {
+    @apply py-12 sm:py-16 md:py-20;
+  }
+  
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+  }
+  
+  /* Fix for mobile viewport height issues */
+  .min-h-screen-mobile {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  
+  /* Desktop layout fixes */
+  @media (min-width: 1024px) {
+    .sidebar-desktop {
+      @apply static transform-none shadow-none;
+    }
+    
+    .main-content-desktop {
+      @apply flex-1 pl-0;
+    }
+  }
+  
+  /* Ensure proper flex behavior for layouts */
+  .layout-container {
+    @apply flex min-h-screen;
+  }
+  
+  .sidebar-container {
+    @apply w-64 flex-shrink-0;
+  }
+  
+  .content-container {
+    @apply flex-1 flex flex-col min-w-0;
   }
 }
